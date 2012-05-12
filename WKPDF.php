@@ -292,7 +292,7 @@ class Document implements \ArrayAccess
         return $this;
     }
 
-    public function result()
+    public function __toString()
     {
         return $this->render()->result;
     }
@@ -314,6 +314,12 @@ class Document implements \ArrayAccess
     public function margins($top, $right = null, $bottom = null, $left = null)
     {
         static $sides = array('top', 'right', 'bottom', 'left');
+
+        if(is_string($top) && strpos($top, ' ') !== false)
+            $top = preg_split('`\s+`', $top);
+
+        if(is_array($top))
+            return call_user_func_array(array($this, __METHOD__), $top);
 
         if($right === null)
             $right = $top;
@@ -461,7 +467,7 @@ class Document implements \ArrayAccess
             && preg_match('`\bgzip\b`i', $_SERVER['ACCEPT_ENCODING']))
         {
             header('Content-Encoding: gzip');
-            $response = gzencode($this->result());
+            $response = gzencode($this);
         }
         else
             $response =& $this->result;
@@ -473,6 +479,15 @@ class Document implements \ArrayAccess
 
         die($response);
     }
+
+    public function save($path)
+    {
+        if(file_put_contents($path, $this) === false)
+            throw new Exception("Unable to write to file '$this'.");
+
+        return $this;
+    }
+
 }
 
 class HeaderOrFooter
