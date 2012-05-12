@@ -383,6 +383,22 @@ class Document implements \ArrayAccess
         $this['user-style-sheet'] = realpath($path);
     }
 
+    public function smartShrinking($use = true)
+    {
+        $this['disable-smart-shrinking'] = !$use;
+        $this['enable-smart-shrinking'] = !!$use;
+
+        return $this;
+    }
+
+    public function externalLinks($use = true)
+    {
+        $this['disable-external-links'] = !$use;
+        $this['enable-external-links'] = !!$use;
+
+        return $this;
+    }
+
     public function orientation($orientation = 'Portrait')
     {
         $this['orientation'] = (strlen($orientation) && strtolower($orientation{0}) == 'p')
@@ -395,6 +411,13 @@ class Document implements \ArrayAccess
     public function pageSize($pageSize = 'A4')
     {
         $this['page-size'] = $pageSize;
+
+        return $this;
+    }
+
+    public function dpi($resolution = null)
+    {
+        $this['dpi'] = intval($resolution) ?: 300;
 
         return $this;
     }
