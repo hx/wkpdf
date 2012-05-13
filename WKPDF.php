@@ -1,7 +1,29 @@
 <?php
 
+/**
+ * WKPDF
+ * by Neil E. Pearson
+ *
+ * PHP sugar for the wkhtmltopdf shell utility by antialize.
+ *
+ * wkhtmltopdf home: http://code.google.com/p/wkhtmltopdf/
+ * wkhtmltopdf code: https://github.com/antialize/wkhtmltopdf
+ *
+ * @package WKPDF
+ * @author Neil E. Pearson
+ * @copyright Copyright 2012 Neil E. Pearson
+ * @version 0.1
+ * @license http://www.apache.org/licenses/LICENSE-2.0 Licensed under the Apache License, Version 2.0
+ */
+
+/**
+ * Namespace for WKPDF classes
+ */
 namespace WKPDF {
 
+/**
+ * Represents a single PDF document
+ */
 class Document implements \ArrayAccess
 {
 
@@ -41,49 +63,82 @@ class Document implements \ArrayAccess
     }
 
     /**
-     * Create a new Document instance from an HTML string.
+     * If called statically, create a new Document instance from an HTML string.
+     * If bound to an instance, replace the document's source with an HTML string.
      * @param string $html The HTML document to be converted to PDF.
      * @return Document
+     * @static
      */
-    public static function fromString($html)
+    public function fromString($html)
     {
-        return self::fromStringRef($html);
+        return isset($this)
+            ? $this->fromStringRef($html)
+            : self::fromStringRef($html);
     }
 
     /**
-     * Create a new Document instance from an HTML string, passed by reference.
+     * If called statically, create a new Document instance from an HTML string,
+     * passed by reference. If bound to an instance, replace the document's
+     * source with an HTML string reference.
      * @param string $html The HTML document to be converted to PDF.
      * @return Document
+     * @static
      */
-    public static function fromStringRef(&$html)
+    public function fromStringRef(&$html)
     {
-        $ret = new self;
-        return $ret->sourceRef($html);
+        $ret = isset($this) ? $this : new self;
+
+        $ret->sourceFile = '-';
+        $ret->sourceData =& $html;
+
+        return $ret->clearResult();
     }
 
     /**
-     * Create a new Document instance from an HTML file.
+     * If called statically, create a new Document instance from an HTML file.
+     * If bound to an instance, replace the document's source with an HTML file.
      * @param string $path Path of the HTML document to be converted to PDF.
      * @return Document
+     * @static
      */
-    public static function fromFile($path)
+    public function fromFile($path)
     {
-        $ret = new self;
-        return $ret->sourceFile($path);
+        $ret = isset($this) ? $this : new self;
+
+        if(!is_file($path))
+            throw new Exception(sprintf("File '%s' not found.", $path));
+
+        $ret->sourceFile = realpath($path);
+
+        if(!is_readable($ret->sourceFile))
+            throw new Exception(sprintf("Cannot read file '%s'.", $ret->sourceFile));
+
+        unset($ret->sourceData);
+
+        return $ret->clearResult();
     }
 
     private static function cleanSwitchName($switchName) {
         return preg_replace('`[A-Z]`e', '"-" . strtolower("$0")', preg_replace('`[^-a-zA-Z]`', '', $switchName));
     }
 
-    public static function makeDataUri($data, $type = 'text/html', $charset = null, $base64 = true)
+    /**
+     * Helper method used by other classes to prepare data URIs.
+     * @param string $contents Contents of the data URI.
+     * @param string|boolean $type Content type, or <b>false</b> to omit.
+     * @param string|boolean $charset Content character encoding, or <b>false</b>
+     * to omit.
+     * @param boolean $base64 Encode as base64
+     * @return string The complete data uri
+     */
+    public static function makeDataUri($contents, $type = 'text/html', $charset = false, $base64 = true)
     {
         return sprintf(
             'data:%s%s%s,%s',
             $type,
             $charset ? ";charset=$charset" : '',
             $base64 ? ';base64' : '',
-            $base64 ? base64_encode($data) : rawurlencode($data)
+            $base64 ? base64_encode($contents) : rawurlencode($contents)
             );
     }
 
@@ -106,6 +161,11 @@ class Document implements \ArrayAccess
 
     private $headerAndFooter = array();
 
+    /**
+     * Create a new Document, with an optional source.
+     * @param string|null $source Path to an HTML document, or an HTML string.
+     * WKPDF will attempt to auto-detect which is supplied.
+     */
     public function __construct($source = null)
     {
         if(is_string($source) && strlen($source))
@@ -118,6 +178,9 @@ class Document implements \ArrayAccess
         }
     }
 
+    /**
+     * @return Document
+     */
     private function clearResult()
     {
         $this->result = null;
@@ -136,11 +199,24 @@ class Document implements \ArrayAccess
         return $this->offsetSet($switch, $value);
     }
 
+    /**
+     * Part of ArrayAccess implementation. Determine if a switch has been
+     * specified. Use <b>isset()</b> instead.
+     * @param string $offset The switch to test.
+     * @return boolean True if the switch has been specified.
+     */
     public function offsetExists($offset)
     {
         return isset($this->switches[self::cleanSwitchName($offset)]);
     }
 
+    /**
+     * Part of ArrayAccess implementation. Get the value of a switch. Use
+     * array accessors <b>[ ]</b> instead.
+     * @param string $offset The switch to query.
+     * @return mixed Value of the given switch, or <b>null</b> if it doesn't
+     * exist.
+     */
     public function offsetGet($offset)
     {
         $offset = self::cleanSwitchName($offset);
@@ -150,12 +226,25 @@ class Document implements \ArrayAccess
             : null;
     }
 
+    /**
+     * Part of ArrayAccess implementation. Set a switch. Use array accessors
+     * <b>[ ]</b> instead.
+     * @param string $offset The switch to set.
+     * @param mixed $value Value of the switch. For value-less switches, use
+     * <b>true</b> to include or <b>false</b> to exclude.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function offsetSet($offset, $value)
     {
         $this->switches[self::cleanSwitchName($offset)] = $value;
         return $this->clearResult();
     }
 
+    /**
+     * Part of ArrayAccess implementation. Remove a switch. Use <b>unset()</b>
+     * instead.
+     * @param string $offset The switch to remove.
+     */
     public function offsetUnset($offset)
     {
         $offset = self::cleanSwitchName($offset);
@@ -167,34 +256,13 @@ class Document implements \ArrayAccess
         }
     }
 
-    public function source($html)
-    {
-        return $this->sourceRef($html);
-    }
-
-    public function sourceRef(&$html)
-    {
-        $this->sourceFile = '-';
-        $this->sourceData =& $html;
-
-        return $this->clearResult();
-    }
-
-    public function sourceFile($path)
-    {
-        if(!is_file($path))
-            throw new Exception(sprintf("File '%s' not found.", $path));
-
-        $this->sourceFile = realpath($path);
-
-        if(!is_readable($this->sourceFile))
-            throw new Exception(sprintf("Cannot read file '%s'.", $this->sourceFile));
-
-        unset($this->sourceData);
-
-        return $this->clearResult();
-    }
-
+    /**
+     * Render the document.
+     * 
+     * @return Document
+     * @throws Exception
+     * @throws BinaryException
+     */
     private function render()
     {
         if($this->result === null)
@@ -292,6 +360,10 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Get the document's PDF data.
+     * @return string
+     */
     public function __toString()
     {
         return $this->render()->result;
@@ -309,7 +381,7 @@ class Document implements \ArrayAccess
      * value of <b>$top</b>.
      * @param float|integer|string|boolean $left If omitted, will use the value
      * of <b>$right</b>.
-     * @return Document The Document instance, for chaining.
+     * @return Document The instance on which the method was called, for chaining.
      */
     public function margins($top, $right = null, $bottom = null, $left = null)
     {
@@ -342,6 +414,12 @@ class Document implements \ArrayAccess
 
     }
 
+    /**
+     * Include or exclude an outline.
+     * @param boolean $include <b>True</b> to include an outline, or <b>false</b>
+     * not to include an outline.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function outline($include = true)
     {
         $this['no-outline'] = !$include;
@@ -350,6 +428,12 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Enable or disable rendering of background images.
+     * @param boolean $include <b>True</b> to include background images, or
+     * <b>false</b> to exclude background images.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function background($include = true)
     {
         $this['no-background'] = !$include;
@@ -358,6 +442,12 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Enable or disable rendering of images.
+     * @param boolean $include <b>True</b> to include images, or <b>false</b> to
+     * exclude background images.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function images($include = true)
     {
         $this['no-images'] = !$include;
@@ -366,6 +456,14 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Specify additional CSS directly from a string.
+     * @param string $css The CSS rules to be applied to the document.
+     * @param string $charset Character set of the CSS being applied.
+     * @param boolean $useTempFile Use a temp file instead of a data uri. May
+     * be helpful for large amounts of CSS.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function cssString($css, $charset = 'utf-8', $useTempFile = false)
     {
         $this['user-style-sheet'] = $useTempFile
@@ -375,6 +473,11 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Specify an additional CSS file.
+     * @param string $path Path of the CSS file.
+     * @throws Exception
+     */
     public function cssFile($path)
     {
         if(!is_file($path) || !is_readable($path))
@@ -383,6 +486,12 @@ class Document implements \ArrayAccess
         $this['user-style-sheet'] = realpath($path);
     }
 
+    /**
+     * Enable or disable Webkit's smart shrinking.
+     * @param boolean $use <b>True</b> to use smart shrinking, or <b>false</b>
+     * to not use smart shrinking.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function smartShrinking($use = true)
     {
         $this['disable-smart-shrinking'] = !$use;
@@ -391,6 +500,12 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Enable or disable inclusion of links to external URIs.
+     * @param boolean $use <b>True</b> to include external links, or <b>false</b>
+     * to exclude external links.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function externalLinks($use = true)
     {
         $this['disable-external-links'] = !$use;
@@ -399,6 +514,11 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Set the page orientation.
+     * @param string $orientation <b>Portrait</b> or <b>Landscape</b>
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function orientation($orientation = 'Portrait')
     {
         $this['orientation'] = (strlen($orientation) && strtolower($orientation{0}) == 'p')
@@ -408,6 +528,11 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Set the page size.
+     * @param string $pageSize Page size (A4, Letter etc).
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function pageSize($pageSize = 'A4')
     {
         $this['page-size'] = $pageSize;
@@ -415,6 +540,11 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Change the DPI explicitly (this has no effect on X11 based systems).
+     * @param integer $resolution DPI to use.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function dpi($resolution = null)
     {
         $this['dpi'] = intval($resolution) ?: 300;
@@ -422,6 +552,11 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Set the document title.
+     * @param string $title New document title.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function title($title = false)
     {
         $this['title'] = $title;
@@ -429,6 +564,13 @@ class Document implements \ArrayAccess
         return $this;
     }
 
+    /**
+     * Add extra header/footer replacement values.
+     * @param string $name String that will be replaced, if found inside square
+     * brackets <b>[ ]</b>.
+     * @param string $value Replacement string.
+     * @return Document The instance on which the method was called, for chaining.
+     */
     public function replace($name, $value)
     {
         $a =& $this->headerAndFooterReplacements;
@@ -449,8 +591,6 @@ class Document implements \ArrayAccess
 
         return $this->headerAndFooter[$which];
     }
-
-
 
     /**
      * Methods to modify the PDF page headers
@@ -479,7 +619,16 @@ class Document implements \ArrayAccess
         return $this->getHeaderOrFooter('header footer');
     }
 
-    public function serve($asAttachment = false, $fileName = null)
+    /**
+     * Output a <b>Content-Type: application/pdf</b> header, followed by the
+     * rendered PDF. If gzip is supported at both ends, also outputs a
+     * <b>Content-Encoding: gzip</b> header and compresses the PDF.
+     * @param boolean $asAttachment <b>True</b> to serve as an attachement (aka
+     * forced download), or <b>false</b> to serve inline (standard).
+     * @param string $fileName When serving as an attachment (forced download),
+     * this filename will be used.
+     */
+    public function serve($asAttachment = false, $fileName = 'Document.pdf')
     {
         header('Content-Type: application/pdf');
 
@@ -497,12 +646,18 @@ class Document implements \ArrayAccess
 
         header(sprintf('Content-Disposition: %s; filename="%s"',
             $asAttachment ? 'attachment' : 'inline',
-            $fileName ?: 'Document.pdf')
+            $fileName)
             );
 
         die($response);
     }
 
+    /**
+     * Save the PDF to a file.
+     * @param string $path Path of the file to which the PDF is to be written.
+     * @return Document The instance on which the method was called, for chaining.
+     * @throws Exception
+     */
     public function save($path)
     {
         if(file_put_contents($path, $this) === false)
@@ -513,6 +668,9 @@ class Document implements \ArrayAccess
 
 }
 
+/**
+ * Provides methods for modifying each page's header and/or footer.
+ */
 class HeaderOrFooter
 {
 
@@ -521,16 +679,35 @@ class HeaderOrFooter
      */
     private $parent;
 
+    /**
+     * @var array
+     */
     private $headerOrFooter;
 
+    /**
+     * @var HeaderOrFooterHTMLController
+     */
     private $htmlController = null;
 
-    public function __construct(Document $parent, Array $headerOrFooter)
+    /**
+     * Shouldn't be used directly. Call a <b>Document</b> instance's <b>header()</b>,
+     * <b>footer()</b>, or <b>headerAndFooter()</b> method instead.
+     * @param Document $parent
+     * @param array $headerOrFooter
+     */
+    public function __construct(Document $parent, array $headerOrFooter)
     {
         $this->parent = $parent;
         $this->headerOrFooter = $headerOrFooter;
     }
 
+    /**
+     *
+     * @param string $switch
+     * @param mixed $value
+     * @return HeaderOrFooter The instance on which the method was called, for
+     * chaining.
+     */
     private function setSwitch($switch, $value)
     {
         foreach($this->headerOrFooter as $i)
@@ -540,7 +717,8 @@ class HeaderOrFooter
     }
 
     /**
-     * @return Document
+     * End a chain of method calls by returning the parent Document instance.
+     * @return Document The parent Document instance.
      */
     public function end()
     {
